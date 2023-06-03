@@ -13,21 +13,7 @@ app.use(bodyParser.urlencoded({extended:false}))
 app.set('view engine','ejs')
 app.use(express.static('./public'))
 
-app.use((req,res,next)=>{
-  const err=new Error("Not Found");
-  err.status=404;
-  next(err)
-})
 
-app.use((err,req,res,next)=>{
-  res.status(err.status||500);
-  res.send({
-    error:{
-      status:err.status||500,
-      message:err.message
-    }
-  })
-})
 app.get('/',(req,res)=>{
     res.send({message:'All good'})
 })
@@ -96,9 +82,28 @@ app.post('/login',async (req,res)=>{
 }
 catch(error)
 {
-  res.send({error})
+  const customError = new Error('Something went wrong! Please try again later.');
+    customError.status = 500;
+
+    next(customError);
 }
 })
+
+app.use((req, res, next) => {
+  const err = new Error('Not Found');
+  err.status = 404;
+  next(err);
+});
+
+app.use((err, req, res, next) => {
+  res.status(err.status || 500).send({
+    error: {
+      status: err.status || 500,
+      message: err.message || 'Something went wrong! Please try again later.',
+    },
+  });
+});
+
 app.listen(process.env.PORT,()=>{
     mongoose.connect(process.env.MONGODB_URL,
     {
