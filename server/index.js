@@ -11,6 +11,9 @@ app.use(bodyParser.urlencoded({extended:false}))
 app.set('view engine','ejs')
 app.use(express.static('./public'))
 
+app.get('/',(req,res)=>{
+    res.send({message:'All good'})
+})
 app.listen(process.env.PORT,()=>{
     mongoose.connect(process.env.MONGODB_URL,//its better to start the server only after the database is loaded hence put the connection inside the app.listen
     {
