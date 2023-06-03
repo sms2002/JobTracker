@@ -1,9 +1,9 @@
 const mongoose=require('mongoose')
 
 const User=mongoose.model('User',{
-    Name:String,
-    Email:String,
-    Mobile:Number,
+    name:String,
+    email:String,
+    mobile:Number,
     password:String,
   })
   
