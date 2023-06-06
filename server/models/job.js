@@ -1,5 +1,4 @@
 const mongoose=require('mongoose')
-
 const Job=mongoose.model('Job',{
     companyName:String,
     logoUrl:String,
@@ -10,7 +9,8 @@ const Job=mongoose.model('Job',{
     location:String,
     jobDescription:String,
     aboutCompany:String,
-    skills:[String]
+    skills:[String],
+    userEmail: String 
   })
   
 module.exports=Job

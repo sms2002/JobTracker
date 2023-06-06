@@ -13,7 +13,20 @@ app.use(bodyParser.urlencoded({extended:false}))
 app.set('view engine','ejs')
 app.use(express.static('./public'))
 
-
+const isAuthenticated=(req,res,next)=>
+{
+  try
+  {
+    const user=jwt.verify(req.headers.token,process.env.JWT_SECRET_KEY)
+    req.user=user//this will decode the user details sent via the payload as req to the next middleware in case of chaining
+  }catch(error)
+  {
+    return res.send({status:'Fail',message:'Please login first'})
+  }
+    next()//this is done in middlewares after the execution if everything is fine 
+    //then the place where this middleware is called can continue their execution
+    //that is in here the private-route 
+}
 app.get('/',(req,res)=>{
     res.send({message:'All good'})
 })
@@ -88,7 +101,86 @@ catch(error)
     next(customError);
 }
 })
+app.post('/job', isAuthenticated, (req, res) => {
+  // Validate the request body fields
+  const {
+    companyName,
+    logoUrl,
+    jobPosition,
+    monthlySalary,
+    jobType,
+    remoteOffice,
+    location,
+    jobDescription,
+    aboutCompany,
+    skills
+  } = req.body;
+ console.log(req.user.email)
+ const {email}=req.user
+  // Perform validation checks on the required fields
+  if (!companyName || !logoUrl || !jobPosition || !monthlySalary || !jobType || !remoteOffice || !location || !jobDescription || !aboutCompany || !skills) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
+  // Validate the job type field
+  if (jobType !== 'Full Time' && jobType !== 'Part Time') {
+    return res.status(400).json({ error: 'Invalid job type. Allowed values are "Full Time" or "Part Time"' });
+  }
+
+  // Create a new job object with the validated fields
+  const job = new Job({
+    companyName,
+    logoUrl,
+    jobPosition,
+    monthlySalary,
+    jobType,
+    remoteOffice,
+    location,
+    jobDescription,
+    aboutCompany,
+    skills,
+    userEmail:email
+  });
+
+  // Save the job to the database
+  job.save()
+    .then(() => {
+      res.status(201).json({ message: 'Job post created successfully' });
+    })
+    .catch((error) => {
+      res.status(500).json({ error: 'Failed to create job post' });
+    });
+});
+app.get('/filterjobs',async(req,res)=>{
+  try {
+    // Get user input skills from x-www-urluncoded header'skills' body
+    //From frontend user should send skills in , seperated values
+    const userInputSkills = req.body.skills.split(',');
+
+    // Find jobs that contain all of the user input skills
+    const jobs = await Job.find({ skills: { $in: userInputSkills } });
+
+    res.json(jobs);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+})
+app.get('/jobs/:id', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+
+    // Find the job by ID
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.json(job);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 app.use((req, res, next) => {
   const err = new Error('Not Found');
   err.status = 404;
