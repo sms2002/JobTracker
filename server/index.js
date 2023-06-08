@@ -12,24 +12,48 @@ const app=express();
 app.use(bodyParser.urlencoded({extended:false}))
 app.set('view engine','ejs')
 app.use(express.static('./public'))
+let blacklistedTokens = [];//Global blacklistedTokens Array
+//Specific Middleware
+const isAuthenticated = async (req, res, next) => {
+  try {
+    const token = req.headers.token;
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-const isAuthenticated=(req,res,next)=>
-{
-  try
-  {
-    const user=jwt.verify(req.headers.token,process.env.JWT_SECRET_KEY)
-    req.user=user//this will decode the user details sent via the payload as req to the next middleware in case of chaining
-  }catch(error)
-  {
-    return res.send({status:'Fail',message:'Please login first'})
+    const decodedToken = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const { email } = decodedToken;
+
+    if (!email) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      // User doesn't exist, add the token to the blacklist
+      blacklistedTokens.push(token);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Check if the token is blacklisted
+    if (blacklistedTokens.includes(token)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    req.user = decodedToken;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-    next()//this is done in middlewares after the execution if everything is fine 
-    //then the place where this middleware is called can continue their execution
-    //that is in here the private-route 
-}
+};
+
+
+//App health route
 app.get('/',(req,res)=>{
     res.send({message:'All good'})
 })
+
+//Register Route
 app.post('/register',async(req,res)=>{
   const{name,email,mobile,password}=req.body;
 
@@ -55,11 +79,12 @@ app.post('/register',async(req,res)=>{
   await User.create({
     name,email,mobile,password:encryptedPassword
   })
+  
   const jwtToken=jwt.sign(
     {name,email,mobile},
     process.env.JWT_SECRET_KEY
     )
-  res.send({status:'success',message:"User created successfully",jwtToken})
+  res.send({status:'success',message:"User created successfully",name,jwtToken})
   }
   catch(error)
   {
@@ -70,37 +95,38 @@ app.post('/register',async(req,res)=>{
   }
  
 })
-app.post('/login',async (req,res)=>{
-  const{name,email,mobile,password}=req.body;
-  try
-  {
- const user=await User.findOne({email});
- if(user)
- {
-  let passwordMatch=await bcrypt.compare(password,user.password)
-  if(passwordMatch)
-  {
-    const jwtToken=jwt.sign(
-      {name,email,mobile},
-      process.env.JWT_SECRET_KEY
-      )
-    return res.send({
-      status:'SUCCESS',
-      message:"User logged in successfully",
-      jwtToken
-    })
-  }
-  }
-  res.send({status:'FAIL',message:"Incorrect Credentials"})
-}
-catch(error)
-{
-  const customError = new Error('Something went wrong! Please try again later.');
-    customError.status = 500;
 
+//Login Route
+app.post('/login', async (req, res, next) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (user) {
+      let passwordMatch = await bcrypt.compare(password, user.password);
+      if (passwordMatch) {
+        const { name, mobile } = user;
+        const jwtToken = jwt.sign(
+          { name, email, mobile },
+          process.env.JWT_SECRET_KEY
+        );
+        return res.send({
+          status: 'SUCCESS',
+          message: 'User logged in successfully',
+          name,
+          jwtToken,
+        });
+      }
+    }
+    res.send({ status: 'FAIL', message: 'Incorrect Credentials' });
+  } catch (error) {
+    console.error(error);
+    const customError = new Error('Something went wrong! Please try again later.');
+    customError.status = 500;
     next(customError);
-}
-})
+  }
+});
+
+//Creating a new Job post
 app.post('/job', isAuthenticated, (req, res) => {
   // Validate the request body fields
   const {
@@ -116,6 +142,8 @@ app.post('/job', isAuthenticated, (req, res) => {
     skills
   } = req.body;
  console.log(req.user.email)
+ console.log(req.user.name)
+ console.log(req.user.mobile)
  const {email}=req.user
   // Perform validation checks on the required fields
   if (!companyName || !logoUrl || !jobPosition || !monthlySalary || !jobType || !remoteOffice || !location || !jobDescription || !aboutCompany || !skills) {
@@ -151,6 +179,8 @@ app.post('/job', isAuthenticated, (req, res) => {
       res.status(500).json({ error: 'Failed to create job post' });
     });
 });
+
+//Filtering jobs based on skills
 app.get('/filterjobs',async(req,res)=>{
   try {
     // Get user input skills from x-www-urluncoded header'skills' body
@@ -165,6 +195,8 @@ app.get('/filterjobs',async(req,res)=>{
     res.status(500).json({ error: 'Internal server error' });
   }
 })
+
+//Find detailed job description using Job ID
 app.get('/jobs/:id', async (req, res) => {
   try {
     const jobId = req.params.id;
@@ -181,6 +213,59 @@ app.get('/jobs/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+//For editing the job post
+app.put('/job/:id', isAuthenticated, async (req, res) => {
+  const jobId = req.params.id;
+  const {
+    companyName,
+    logoUrl,
+    jobPosition,
+    monthlySalary,
+    jobType,
+    remoteOffice,
+    location,
+    jobDescription,
+    aboutCompany,
+    skills
+  } = req.body;
+
+  try {
+    // Find the job post by ID
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Check if the authenticated user is the owner of the job post
+    if (job.userEmail !== req.user.email) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Update the job post fields
+    job.companyName = companyName;
+    job.logoUrl = logoUrl;
+    job.jobPosition = jobPosition;
+    job.monthlySalary = monthlySalary;
+    job.jobType = jobType;
+    job.remoteOffice = remoteOffice;
+    job.location = location;
+    job.jobDescription = jobDescription;
+    job.aboutCompany = aboutCompany;
+    job.skills = skills;
+
+    // Save the updated job post
+    await job.save();
+
+    res.json({ message: 'Job post updated successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update job post' });
+  }
+});
+
+//General Middleware for error handling
 app.use((req, res, next) => {
   const err = new Error('Not Found');
   err.status = 404;
@@ -196,6 +281,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+//Server Connection+ Mongo DB connection
 app.listen(process.env.PORT,()=>{
     mongoose.connect(process.env.MONGODB_URL,
     {
