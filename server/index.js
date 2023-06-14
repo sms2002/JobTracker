@@ -6,13 +6,14 @@ const bcrypt=require('bcrypt')
 const jwt=require('jsonwebtoken')
 const User=require("./models/user")
 const Job=require("./models/job")
+const cors = require('cors');
 dotenv.config()
 
 const app=express();
+app.use(cors());
 app.use(bodyParser.urlencoded({extended:false}))
 app.set('view engine','ejs')
 app.use(express.static('./public'))
-let blacklistedTokens = [];//Global blacklistedTokens Array
 //Specific Middleware
 const isAuthenticated = async (req, res, next) => {
   try {
@@ -30,13 +31,6 @@ const isAuthenticated = async (req, res, next) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      // User doesn't exist, add the token to the blacklist
-      blacklistedTokens.push(token);
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    // Check if the token is blacklisted
-    if (blacklistedTokens.includes(token)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -84,7 +78,7 @@ app.post('/register',async(req,res)=>{
     {name,email,mobile},
     process.env.JWT_SECRET_KEY
     )
-  res.send({status:'success',message:"User created successfully",name,jwtToken})
+  res.send({status:'success',message:"User created successfully",name,email,jwtToken})
   }
   catch(error)
   {
@@ -113,7 +107,9 @@ app.post('/login', async (req, res, next) => {
           status: 'SUCCESS',
           message: 'User logged in successfully',
           name,
+          email,
           jwtToken,
+          
         });
       }
     }
@@ -178,6 +174,14 @@ app.post('/job', isAuthenticated, (req, res) => {
     .catch((error) => {
       res.status(500).json({ error: 'Failed to create job post' });
     });
+});
+app.get('/jobs', async (req, res) => {
+  try {
+    const jobs = await Job.find();
+    res.json(jobs);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 //Filtering jobs based on skills
