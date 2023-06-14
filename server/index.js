@@ -7,6 +7,7 @@ const jwt=require('jsonwebtoken')
 const User=require("./models/user")
 const Job=require("./models/job")
 const cors = require('cors');
+const PORT=process.env.PORT||4000
 dotenv.config()
 
 const app=express();
@@ -286,7 +287,7 @@ app.use((err, req, res, next) => {
 });
 
 //Server Connection+ Mongo DB connection
-app.listen(process.env.PORT,()=>{
+app.listen(PORT,()=>{
     mongoose.connect(process.env.MONGODB_URL,
     {
       useNewUrlParser: true,
